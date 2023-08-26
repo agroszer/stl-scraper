@@ -40,6 +40,10 @@ class Curling:
             regex = f"{key}%22%3A%22(.*?)%22"
             tgt = f"{key}%22%3A%22{repl}%22"
             text = re.sub(regex, tgt, text)
+
+            regex = f"{key}=(.*?)&"
+            tgt = f"{key}%={repl}&"
+            text = re.sub(regex, tgt, text)
         return text
 
     def exec(self, data, api_key):
