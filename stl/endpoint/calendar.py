@@ -1,15 +1,92 @@
 import json
+import re
 import statistics
+import subprocess
 
 from datetime import date, datetime, timedelta
 from itertools import groupby
 from logging import Logger
 from operator import itemgetter
+from random import randint
 from requests.exceptions import ConnectionError
 from time import sleep
 
 from stl.endpoint.base_endpoint import BaseEndpoint
 from stl.endpoint.pdp import Pdp
+from stl.exception.api import ApiException
+
+# ohwell. No time to debug why various request parameters and headers are
+# needed or not needed to get a successful response.
+# Much easier to just use the chrome devtools network tab to copy the XHR request
+# data with right click, 'Copy / Copy as cURL' and paste it below.
+#
+# 1. Open up airbnb.com
+# 2. Click on the very first listing
+# 3. Let the page load, open up devtools
+# 4. Go to the network tab
+# 5. Clear all requests
+# 6. Filter for XHR
+# 7. Set some checkinDate and checkoutDate
+# 8. Watch the network tab for the request
+# 9. Right click on the request, 'Copy / Copy as cURL' and paste it below.
+# optionally anonymize data
+# Do a test run, watch for changed response data
+
+class Curling:
+    CURL = ""
+
+    def subst(self, text, data):
+        for key, repl in data.items():
+            regex = f"{key}%22%3A%22(.*?)%22"
+            tgt = f"{key}%22%3A%22{repl}%22"
+            text = re.sub(regex, tgt, text)
+        return text
+
+    def exec(self, data, api_key):
+        cmd = self.subst(self.CURL.strip(), data)
+
+        regex = "'X-Airbnb-API-Key: (.*?)'"
+        tgt = f"'X-Airbnb-API-Key: {api_key}'"
+        cmd = re.sub(regex, tgt, cmd)
+
+        regex = "-H 'Referer: .*?'"
+        tgt = ""
+        cmd = re.sub(regex, tgt, cmd)
+
+        cmd = f"{cmd} --silent"
+
+        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+        content = result.stdout
+        return content
+
+
+class PricingCurling(Curling):
+    CURL = """
+curl 'https://www.airbnb.com/api/v3/StayCheckoutSections?operationName=StayCheckoutSections&locale=en&currency=HUF&variables=%7B%22input%22%3A%7B%22businessTravel%22%3A%7B%22workTrip%22%3Afalse%7D%2C%22checkinDate%22%3A%222023-09-04%22%2C%22checkoutDate%22%3A%222023-09-06%22%2C%22guestCounts%22%3A%7B%22numberOfAdults%22%3A1%2C%22numberOfChildren%22%3A0%2C%22numberOfInfants%22%3A0%2C%22numberOfPets%22%3A0%7D%2C%22guestCurrencyOverride%22%3A%22HUF%22%2C%22listingDetail%22%3A%7B%7D%2C%22lux%22%3A%7B%7D%2C%22metadata%22%3A%7B%22internalFlags%22%3A%5B%22LAUNCH_LOGIN_PHONE_AUTH%22%5D%7D%2C%22org%22%3A%7B%7D%2C%22productId%22%3A%22U3RheUxpc3Rpbmc6NDUyNzE1NTg%3D%22%2C%22china%22%3A%7B%7D%2C%22addOn%22%3A%7B%22carbonOffsetParams%22%3A%7B%22isSelected%22%3Afalse%7D%7D%2C%22quickPayData%22%3Anull%7D%2C%22isLeanFragment%22%3Afalse%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22fe9b61222639b40eac7817d45f3a08a90fd25eac6bac9af3e3f7a6356bf2560a%22%7D%7D' \
+  -H 'X-Airbnb-Prefetch: web' \
+  -H 'sec-ch-ua: "Not)A;Brand";v="24", "Chromium";v="116"' \
+  -H 'DNT: 1' \
+  -H 'X-Airbnb-Supports-Airlock-V2: true' \
+  -H 'X-CSRF-Token: null' \
+  -H 'X-Airbnb-API-Key: d306zoyjsyarp7ifhu67rjxn52tv0t20' \
+  -H 'sec-ch-ua-platform-version: "5.15.0"' \
+  -H 'X-Niobe-Short-Circuited: true' \
+  -H 'dpr: 1' \
+  -H 'sec-ch-ua-platform: "Linux"' \
+  -H 'device-memory: 8' \
+  -H 'X-Airbnb-GraphQL-Platform-Client: minimalist-niobe' \
+  -H 'X-Client-Version: d13783d41e93e8c4b262242093b2a932e82c26e8' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'X-CSRF-Without-Token: 1' \
+  -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36' \
+  -H 'x-client-request-id: 0pn85jm0u5599n0vgfy690mbouxb' \
+  -H 'viewport-width: 1264' \
+  -H 'Content-Type: application/json' \
+  -H 'Referer: https://www.airbnb.com/rooms/45271558?adults=1&category_tag=Tag%3A8536&enable_m3_private_room=true&photo_id=1171105929&search_mode=flex_destinations_search&check_in=2023-09-04&check_out=2023-09-06&source_impression_id=p3_1693044851_ltH8Hl7MuXL%2FL41u&previous_page_section_name=1000&federated_search_id=bb6c907c-8d72-468f-a871-8490ab026e18&guests=1' \
+  -H 'ect: 4g' \
+  -H 'X-Airbnb-GraphQL-Platform: web' \
+  --compressed
+"""
 
 
 class Pricing(BaseEndpoint):
@@ -20,58 +97,95 @@ class Pricing(BaseEndpoint):
         # Get raw price data
         product_id = Pdp.get_product_id(listing_id)
         rates = self.get_rates(product_id, checkin, checkout)
-        sections = rates['data']['startStayCheckoutFlow']['stayCheckout']['sections']
-        if not (sections['temporaryQuickPayData'] and sections['temporaryQuickPayData']['bootstrapPaymentsJSON']):
+        sections = rates['data']['presentation']['stayCheckout']['sections']
+        if not (sections['temporaryQuickPayData'] and sections['temporaryQuickPayData']['bootstrapPayments']):
             raise ValueError('Error retrieving pricing: {}'.format(sections['metadata']['errorData']['errorMessage']))
 
-        quickpay_data = json.loads(sections['temporaryQuickPayData']['bootstrapPaymentsJSON'])
+        quickpay_data = sections['temporaryQuickPayData']['bootstrapPayments']
         return self.__normalize_pricing(
             quickpay_data['productPriceBreakdown']['priceBreakdown'],
             (datetime.strptime(checkout, '%Y-%m-%d') - datetime.strptime(checkin, '%Y-%m-%d')).days
         )
 
+    def _api_request(self, url: str, method: str = 'GET', data=None) -> dict:
+        if data is None:
+            data = {}
+
+        attempts = 0
+        headers = {'x-airbnb-api-key': self._api_key}
+        max_attempts = 3
+        while attempts < max_attempts:
+            sleep(randint(0, 2))  # do a little throttling
+            attempts += 1
+
+            pc = PricingCurling()
+            # response = requests.request(method, url, headers=headers, data=data)
+            response = pc.exec(data, self._api_key)
+            response_json = json.loads(response)
+
+            errors = response_json.get('errors')
+            if not errors:
+                return response_json
+
+            self.__handle_api_error(url, errors)
+
+        raise ApiException(['Could not complete API {} request to "{}"'.format(method, url)])
+
     def get_rates(self, product_id: str, start_date: str, end_date: str):
-        url = BaseEndpoint.build_airbnb_url(self.API_PATH, {
-            'operationName': 'startStaysCheckout',
+        payload = {
             'locale':        self._locale,
-            'currency':      self._currency
-        })
-        payload = json.dumps({
-            'operationName': 'startStaysCheckout',
-            'variables':     {
-                'input': {
-                    'businessTravel':        {
-                        'workTrip': False
-                    },
-                    'checkinDate':           start_date,
-                    'checkoutDate':          end_date,
-                    'guestCounts':           {
-                        'numberOfAdults':   1,
-                        'numberOfChildren': 0,
-                        'numberOfInfants':  0,
-                        'numberOfPets':     0
-                    },
-                    'guestCurrencyOverride': self._currency,
-                    'lux':                   {},
-                    'metadata':              {
-                        'internalFlags': [
-                            'LAUNCH_LOGIN_PHONE_AUTH'
-                        ]
-                    },
-                    'org':                   {},
-                    'productId':             product_id,
-                    'china':                 {},
-                    'quickPayData':          None
-                }
-            },
-            'extensions':    {
-                'persistedQuery': {
-                    'version':    1,
-                    'sha256Hash': '4a01261214aad9adf8c85202020722e6e05bfc7d5f3d0b865531f9a6987a3bd1'
-                }
-            }
-        })
-        return self._api_request(url, 'POST', payload)
+            'currency':      self._currency,
+            'checkinDate':           start_date,
+            'checkoutDate':          end_date,
+            'guestCurrencyOverride': self._currency,
+            'productId':             product_id,
+        }
+        url = ''
+        return self._api_request(url, payload)
+
+        # return pc.exec(data, self._api_key)
+        #
+        # url = BaseEndpoint.build_airbnb_url(self.API_PATH, {
+        #     'operationName': 'startStaysCheckout',
+        #     'locale':        self._locale,
+        #     'currency':      self._currency
+        # })
+        # payload = json.dumps({
+        #     'operationName': 'startStaysCheckout',
+        #     'variables':     {
+        #         'input': {
+        #             'businessTravel':        {
+        #                 'workTrip': False
+        #             },
+        #             'checkinDate':           start_date,
+        #             'checkoutDate':          end_date,
+        #             'guestCounts':           {
+        #                 'numberOfAdults':   1,
+        #                 'numberOfChildren': 0,
+        #                 'numberOfInfants':  0,
+        #                 'numberOfPets':     0
+        #             },
+        #             'guestCurrencyOverride': self._currency,
+        #             'lux':                   {},
+        #             'metadata':              {
+        #                 'internalFlags': [
+        #                     'LAUNCH_LOGIN_PHONE_AUTH'
+        #                 ]
+        #             },
+        #             'org':                   {},
+        #             'productId':             product_id,
+        #             'china':                 {},
+        #             'quickPayData':          None
+        #         }
+        #     },
+        #     'extensions':    {
+        #         'persistedQuery': {
+        #             'version':    1,
+        #             'sha256Hash': '4a01261214aad9adf8c85202020722e6e05bfc7d5f3d0b865531f9a6987a3bd1'
+        #         }
+        #     }
+        # })
+        # return self._api_request(url, 'POST', payload)
 
     @staticmethod
     def __normalize_pricing(price_breakdown: dict, nights: int):
@@ -97,10 +211,10 @@ class Pricing(BaseEndpoint):
 
         # Create normalized pricing object
         mega = 1_000_000  # one million
-        price_accommodation = items['ACCOMMODATION']['total']['amountMicros'] / mega
-        taxes = items['TAXES']['total']['amountMicros'] / mega if items.get('TAXES') else 0
-        cleaning_fee = items['CLEANING_FEE']['total']['amountMicros'] / mega if items.get('CLEANING_FEE') else 0
-        airbnb_fee = items['AIRBNB_GUEST_FEE']['total']['amountMicros'] / mega if items.get('AIRBNB_GUEST_FEE') else 0
+        price_accommodation = int(items['ACCOMMODATION']['total']['amountMicros']) / mega
+        taxes = int(items['TAXES']['total']['amountMicros']) / mega if items.get('TAXES') else 0
+        cleaning_fee = int(items['CLEANING_FEE']['total']['amountMicros']) / mega if items.get('CLEANING_FEE') else 0
+        airbnb_fee = int(items['AIRBNB_GUEST_FEE']['total']['amountMicros']) / mega if items.get('AIRBNB_GUEST_FEE') else 0
         pricing = {
             'nights':              nights,
             'price_nightly':       price_accommodation / nights,
@@ -108,11 +222,11 @@ class Pricing(BaseEndpoint):
             'price_cleaning':      cleaning_fee,
             'taxes':               taxes,
             'airbnb_fee':          airbnb_fee,
-            'total':               price_breakdown['total']['total']['amountMicros'] / mega,
+            'total':               int(price_breakdown['total']['total']['amountMicros']) / mega,
         }
 
         if items.get('DISCOUNT'):
-            discount = -1 * (items['DISCOUNT']['total']['amountMicros'] / mega)
+            discount = -1 * (int(items['DISCOUNT']['total']['amountMicros']) / mega)
             pricing['discount'] = discount
             pricing['tax_rate'] = taxes / (price_accommodation + pricing['price_cleaning'] - discount)
             if items['DISCOUNT']['localizedTitle'] in ['Weekly discount', 'Weekly stay discount']:
