@@ -42,7 +42,7 @@ class Curling:
             text = re.sub(regex, tgt, text)
 
             regex = f"{key}=(.*?)&"
-            tgt = f"{key}%={repl}&"
+            tgt = f"{key}={repl}&"
             text = re.sub(regex, tgt, text)
         return text
 
@@ -113,7 +113,7 @@ class Pricing(BaseEndpoint):
 
     def _api_request(self, url: str, method: str = 'GET', data=None) -> dict:
         if data is None:
-            data = {}
+            raise ValueError("Need some data")
 
         attempts = 0
         headers = {'x-airbnb-api-key': self._api_key}
@@ -145,7 +145,7 @@ class Pricing(BaseEndpoint):
             'productId':             product_id,
         }
         url = ''
-        return self._api_request(url, payload)
+        return self._api_request(url, data=payload)
 
         # return pc.exec(data, self._api_key)
         #
