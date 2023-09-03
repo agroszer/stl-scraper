@@ -30,7 +30,7 @@ class AirbnbSearchScraper(AirbnbScraperInterface):
         self.__persistence = persistence
         self.__reviews = reviews
 
-    def run(self, query: str, params: dict):
+    def run(self, query: str, params: dict, limit=None):
         listings = []
         url = self.__explore.get_url(query, params)
         data, pagination = self.__explore.search(url)
@@ -66,6 +66,12 @@ class AirbnbSearchScraper(AirbnbScraperInterface):
                 )
                 self.__logger.info(msg)
                 listings.append(listing)
+
+                if limit and n_listings > limit:
+                    break
+
+            if limit and n_listings > limit:
+                break
 
             self.__add_search_params(params, url)
             items_offset = pagination['itemsOffset']
