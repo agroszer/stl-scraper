@@ -33,6 +33,9 @@ class Geocoder:
         if 'town' in address:
             address['city'] = address['town']
             return address
+        if 'village' in address:
+            address['city'] = address['village']
+            return address
         if 'state' in address:
             address['city'] = address['state']
             return address
