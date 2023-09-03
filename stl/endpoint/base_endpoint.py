@@ -43,7 +43,7 @@ class BaseEndpoint(ABC):
             if not errors:
                 return response_json
 
-            self.__handle_api_error(url, errors)
+            self._handle_api_error(url, errors)
 
         raise ApiException(['Could not complete API {} request to "{}"'.format(method, url)])
 
@@ -53,7 +53,7 @@ class BaseEndpoint(ABC):
         query['variables'] = json.dumps(query['variables'], separators=(',', ':'))
         query['extensions'] = json.dumps(query['extensions'], separators=(',', ':'))
 
-    def __handle_api_error(self, url: str, errors: list):
+    def _handle_api_error(self, url: str, errors: list):
         error = errors.pop()
         if isinstance(error, dict):
             if error.get('extensions'):

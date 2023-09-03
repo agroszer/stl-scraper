@@ -116,7 +116,7 @@ class Pricing(BaseEndpoint):
             raise ValueError("Need some data")
 
         attempts = 0
-        headers = {'x-airbnb-api-key': self._api_key}
+        # headers = {'x-airbnb-api-key': self._api_key}
         max_attempts = 3
         while attempts < max_attempts:
             sleep(randint(0, 2))  # do a little throttling
@@ -131,7 +131,7 @@ class Pricing(BaseEndpoint):
             if not errors:
                 return response_json
 
-            self.__handle_api_error(url, errors)
+            self._handle_api_error(url, errors)
 
         raise ApiException(['Could not complete API {} request to "{}"'.format(method, url)])
 
