@@ -391,7 +391,9 @@ class Pdp(BaseEndpoint):
     def __get_price_rate(pricing) -> int | None:
         if pricing:
             price_key = Pdp.__get_price_key(pricing)
-            return int(pricing['structuredStayDisplayPrice']['primaryLine'][price_key].lstrip('$').replace(',', ''))
+            price_text = pricing['structuredStayDisplayPrice']['primaryLine'][price_key]
+            price_text = ''.join([c for c in price_text if c in ('0123456789.')])
+            return int(price_text)
 
         return None
 
@@ -406,16 +408,16 @@ class Pdp(BaseEndpoint):
     def __get_total_price(pricing) -> int | None:
         if pricing['structuredStayDisplayPrice']['secondaryLine']:
             price = pricing['structuredStayDisplayPrice']['secondaryLine']['price']
-            amount_match = re.match(r'\$([\w,]+) total', price)
+            amount_match = re.search(r'([\d,.]+) total', price)
         else:
             price_key = Pdp.__get_price_key(pricing)
             price = pricing['structuredStayDisplayPrice']['primaryLine'][price_key]
-            amount_match = re.match(r'\$([\w,]+)', price)
+            amount_match = re.search(r'([\d,.]+)', price)
 
         if not amount_match:
             raise ValueError('No amount match found for price: %s' % price)
 
-        return int(amount_match[1].replace(',', ''))
+        return float(amount_match[1].replace(',', ''))
 
     @staticmethod
     def __html_to_text(html: str) -> str:
